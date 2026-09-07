@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Circle of Fifths</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{color-scheme:dark}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 30%,#1b2232 0,#0c1018 48%,#080a0f 100%);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f7f0dd;overflow-x:hidden}
+.app{width:min(100%,820px);margin:auto;padding:18px 12px 28px;text-align:center}
+h1{font-size:clamp(28px,7vw,44px);margin:4px 0 4px}
+.sub{color:#aeb6c6;font-size:14px;margin-bottom:8px}
+.stage{position:relative;width:min(94vw,680px);aspect-ratio:1;margin:0 auto;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+.card{margin:4px auto 0;width:min(94vw,680px);background:#121722;border:1px solid #293143;border-radius:18px;padding:14px;text-align:left}
+.key{font-size:20px;font-weight:800}.meta{font-size:13px;color:#aeb6c6;margin-top:3px}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+button{border:1px solid #39445d;background:#252e43;color:white;border-radius:13px;padding:13px;font-size:15px;font-weight:750}
+button:active{transform:scale(.985)}
+.hint{font-size:12px;color:#8f98a9;margin:12px auto 0;max-width:620px}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>Circle of Fifths</h1>
+<div class="sub">Tap a key to hear it · drag the wheel to rotate</div>
+<div class="stage" id="stage"><canvas id="c"></canvas></div>
+<div class="card">
+ <div class="key" id="key">C major · A minor</div>
+ <div class="meta" id="meta">0 sharps / flats</div>
+ <div class="buttons"><button id="play">Play chord</button><button id="reset">Reset</button></div>
+</div>
+<div class="hint">Outer band: relative minor · middle band: major key. Tap individual sections for sound.</div>
+</div>
+<script>
+(function(){
+"use strict";
+var canvas=document.getElementById("c"), stage=document.getElementById("stage"), ctx=canvas.getContext("2d");
+var majors=["C","G","D","A","E","B","F♯","D♭","A♭","E♭","B♭","F"];
+var minors=["Am","Em","Bm","F♯m","C♯m","G♯m","D♯m","B♭m","Fm","Cm","Gm","Dm"];
+var sig=["0 sharps / flats","1 sharp","2 sharps","3 sharps","4 sharps","5 sharps","6 sharps","5 flats","4 flats","3 flats","2 flats","1 flat"];
+var semis={"C":0,"C♯":1,"D♭":1,"D":2,"D♯":3,"E♭":3,"E":4,"F":5,"F♯":6,"G♭":6,"G":7,"G♯":8,"A♭":8,"A":9,"A♯":10,"B♭":10,"B":11};
+var rot=0,target=0,down=false,moved=false,lastA=0,lastX=0,lastY=0,active=0,activeType="major",audio=null;
+
+function resize(){
+ var r=stage.getBoundingClientRect(), d=Math.min(window.devicePixelRatio||1,2);
+ canvas.width=Math.round(r.width*d); canvas.height=Math.round(r.height*d);
+ ctx.setTransform(d,0,0,d,0,0); draw();
+}
+function sector(r1,r2,a0,a1,fill,stroke){
+ ctx.beginPath();ctx.arc(0,0,r2,a0,a1);ctx.arc(0,0,r1,a1,a0,true);ctx.closePath();
+ ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=1.2;ctx.stroke();
+}
+function txt(s,r,a,size,bold){
+ ctx.save();ctx.rotate(a);ctx.translate(0,-r);ctx.rotate(-a);
+ ctx.fillStyle="#fff4d4";ctx.font=(bold?"700 ":"600 ")+size+"px Georgia,serif";
+ ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(s,0,0);ctx.restore();
+}
+function draw(){
+ var w=stage.clientWidth,h=stage.clientHeight,R=Math.min(w,h)/2-9;
+ ctx.clearRect(0,0,w,h);ctx.save();ctx.translate(w/2,h/2);ctx.rotate(rot);
+ for(var i=0;i<12;i++){
+  var mid=i*Math.PI/6-Math.PI/2,a0=mid-Math.PI/12,a1=mid+Math.PI/12;
+  sector(R*.74,R,a0,a1,i%2?"#71391e":"#874725","#d0a95d");
+  sector(R*.47,R*.735,a0,a1,i%2?"#171d2c":"#20283a","#b99a57");
+  if(i===active){ctx.save();ctx.globalAlpha=.16;sector(R*.47,R,a0,a1,"#ffe29a","#ffe29a");ctx.restore()}
+  txt(minors[i],R*.86,mid,Math.max(12,R*.052),false);
+  txt(majors[i],R*.60,mid,Math.max(17,R*.075),true);
+ }
+ ctx.beginPath();ctx.arc(0,0,R*.43,0,Math.PI*2);ctx.fillStyle="#0e1420";ctx.fill();ctx.strokeStyle="#d0ad62";ctx.lineWidth=2;ctx.stroke();
+ ctx.rotate(-rot);
+ ctx.fillStyle="#f8eed3";ctx.textAlign="center";ctx.textBaseline="middle";
+ ctx.font="800 "+Math.max(34,R*.16)+"px Georgia,serif";ctx.fillText(majors[active],0,-10);
+ ctx.font="600 "+Math.max(14,R*.058)+"px -apple-system,sans-serif";ctx.fillStyle="#d5bd7e";ctx.fillText(minors[active].replace("m"," minor"),0,30);
+ ctx.restore();
+}
+function angle(e){
+ var r=stage.getBoundingClientRect(),x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2;
+ return Math.atan2(y,x);
+}
+function norm(a){while(a<0)a+=Math.PI*2;while(a>=Math.PI*2)a-=Math.PI*2;return a}
+function hit(e){
+ var r=stage.getBoundingClientRect(),x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2;
+ var rad=Math.hypot(x,y),R=Math.min(r.width,r.height)/2-9;
+ if(rad<R*.47||rad>R)return null;
+ var a=norm(Math.atan2(y,x)-rot+Math.PI/2+Math.PI/12);
+ var i=Math.floor(a/(Math.PI/6))%12;
+ return {i:i,type:rad<R*.74?"major":"minor"};
+}
+function root(label){return label.replace("m","")}
+function freq(s){return 261.625565*Math.pow(2,s/12)}
+function play(type,i){
+ try{
+  if(!audio)audio=new (window.AudioContext||window.webkitAudioContext)();
+  if(audio.state==="suspended")audio.resume();
+  var s=semis[root(type==="major"?majors[i]:minors[i])], ints=type==="major"?[0,4,7]:[0,3,7], now=audio.currentTime;
+  ints.forEach(function(n,k){
+   var o=audio.createOscillator(),g=audio.createGain();o.type="triangle";o.frequency.value=freq(s+n);
+   g.gain.setValueAtTime(.0001,now);g.gain.exponentialRampToValueAtTime(.11,now+.02+k*.012);g.gain.exponentialRampToValueAtTime(.0001,now+.75);
+   o.connect(g);g.connect(audio.destination);o.start(now+k*.012);o.stop(now+.8);
+  });
+ }catch(err){}
+}
+function select(type,i){active=i;activeType=type;document.getElementById("key").textContent=majors[i]+" major · "+minors[i].replace("m"," minor");document.getElementById("meta").textContent=sig[i];draw();play(type,i)}
+stage.addEventListener("pointerdown",function(e){down=true;moved=false;lastA=angle(e);lastX=e.clientX;lastY=e.clientY;stage.setPointerCapture(e.pointerId)});
+stage.addEventListener("pointermove",function(e){if(!down)return;var a=angle(e),d=a-lastA;if(d>Math.PI)d-=Math.PI*2;if(d<-Math.PI)d+=Math.PI*2;if(Math.hypot(e.clientX-lastX,e.clientY-lastY)>5)moved=true;rot+=d;target=rot;lastA=a;draw()});
+stage.addEventListener("pointerup",function(e){if(!down)return;down=false;if(!moved){var h=hit(e);if(h)select(h.type,h.i)}else{target=Math.round(rot/(Math.PI/6))*(Math.PI/6);animateSnap()}});
+function animateSnap(){var d=target-rot;if(Math.abs(d)<.001){rot=target;draw();return}rot+=d*.18;draw();requestAnimationFrame(animateSnap)}
+document.getElementById("play").onclick=function(){play(activeType,active)};
+document.getElementById("reset").onclick=function(){target=0;active=0;activeType="major";document.getElementById("key").textContent="C major · A minor";document.getElementById("meta").textContent=sig[0];animateSnap()};
+window.addEventListener("resize",resize);resize();
+})();
+</script>
+</body></html>
